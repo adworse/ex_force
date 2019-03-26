@@ -12,6 +12,8 @@ defmodule ExForce.Client do
   """
 
   use Tesla
+  plug Tesla.Middleware.Retry, delay: 500, max_retries: Application.get_env(:ex_force, :max_retries, 3)
+  plug Tesla.Middleware.Timeout, timeout: Application.get_env(:ex_force, :timeout, 10_000)
 
   @type t :: Tesla.Client.t()
 end

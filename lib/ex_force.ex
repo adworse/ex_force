@@ -71,6 +71,34 @@ defmodule ExForce do
   end
 
   @doc """
+  Lists information about limits in your org.
+
+  See [Resources by Version](https://developer.salesforce.com/docs/atlas.en-us.api_rest.meta/api_rest/resources_limits.htm)
+  """
+  @spec limits(client) :: {:ok, map} | {:error, any}
+  def limits do
+    case request(client, method: :get, url: "limits") do
+      {:ok, %Tesla.Env{status: 200, body: body}} -> {:ok, body}
+      {:ok, %Tesla.Env{body: body}} -> {:error, body}
+      {:error, _} = other -> other
+    end
+  end
+
+  @doc """
+  Lists information about counts for each object passed.
+
+  See [Resources by Version](https://developer.salesforce.com/docs/atlas.en-us.api_rest.meta/api_rest/resources_record_count.htm)
+  """
+  @spec counts(client, list[String.t()]) :: {:ok, map} | {:error, any}
+  def counts(objects \\ ["Lead"]) do
+    case request(client, method: :get, url: "limits/recordCount?sObjects=#{Enum.join(objects, ",")}") do
+      {:ok, %Tesla.Env{status: 200, body: body}} -> {:ok, body}
+      {:ok, %Tesla.Env{body: body}} -> {:error, body}
+      {:error, _} = other -> other
+    end
+  end
+
+  @doc """
 
   Options
 
