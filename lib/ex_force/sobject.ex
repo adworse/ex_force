@@ -11,14 +11,14 @@ defmodule ExForce.SObject do
   Transforms a `Map` into `ExForce.SObject` recursively.
   """
   @spec build(map) :: t
-  def build(%{"attributes" => %{}} = raw), do: do_build(raw)
+  def build(%{attributes: %{}} = raw), do: do_build(raw)
 
-  defp do_build(%{"attributes" => %{"type" => type, "url" => url}} = val) do
+  defp do_build(%{attributes: %{type: type, url: url}} = val) do
     id = url |> String.split("/") |> List.last()
     %__MODULE__{type: type, id: id, data: do_build_data(val)}
   end
 
-  defp do_build(%{"attributes" => %{"type" => type}} = val) do
+  defp do_build(%{attributes: %{type: type}} = val) do
     %__MODULE__{type: type, data: do_build_data(val)}
   end
 
@@ -26,7 +26,7 @@ defmodule ExForce.SObject do
 
   defp do_build_data(val) do
     val
-    |> Map.delete("attributes")
+    |> Map.delete(:attributes)
     |> Enum.into(%{}, fn {k, v} -> {k, do_build(v)} end)
   end
 end

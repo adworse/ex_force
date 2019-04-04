@@ -16,9 +16,9 @@ defmodule ExForce do
     )
 
   {:ok, version_maps} = ExForce.versions(instance_url)
-  latest_version = version_maps |> Enum.map(&Map.fetch!(&1, "version")) |> List.last()
+  latest_version = version_maps |> Enum.map(&Map.fetch!(&1, :version)) |> List.last()
 
-  client = ExForce.build_client(oauth_response, api_version: latest_version)
+  client = ExForce.Client.build(oauth_response, api_version: latest_version)
 
   names =
     ExForce.query_stream(client, "SELECT Name FROM Account")
@@ -28,19 +28,16 @@ defmodule ExForce do
   ```
   """
 
-  alias ExForce.{QueryResult, SObject}
+  alias ExForce.{QueryResult, SObject, Client}
 
   import ExForce.Client, only: [request: 2]
+  import ExForce.Composite
 
-  @type client :: ExForce.Client.t()
-  @type sobject_id :: String.t()
-  @type sobject_name :: String.t()
-  @type field_name :: String.t()
-  @type soql :: String.t()
-  @type query_id :: String.t()
+  use ExForce.Types
 
-  @default_api_version "42.0"
-  @default_user_agent "ex_force"
+  defdelegate build_client(instance_url_or_map, opts), to: Client, as: :build
+  #defdelegate build_client(instance_url_or_map), to: Client, as: :build
+
 
   @doc """
   Lists available REST API versions at an instance.
@@ -49,7 +46,7 @@ defmodule ExForce do
   """
   @spec versions(String.t()) :: {:ok, list(map)} | {:error, any}
   def versions(instance_url) do
-    case instance_url |> build_client() |> request(method: :get, url: "/services/data") do
+    case instance_url |> Client.build() |> request(method: :get, url: "/services/data") do
       {:ok, %Tesla.Env{status: 200, body: body}} when is_list(body) -> {:ok, body}
       {:ok, %Tesla.Env{body: body}} -> {:error, body}
       {:error, _} = other -> other
@@ -76,7 +73,7 @@ defmodule ExForce do
   See [Resources by Version](https://developer.salesforce.com/docs/atlas.en-us.api_rest.meta/api_rest/resources_limits.htm)
   """
   @spec limits(client) :: {:ok, map} | {:error, any}
-  def limits do
+  def limits(client) do
     case request(client, method: :get, url: "limits") do
       {:ok, %Tesla.Env{status: 200, body: body}} -> {:ok, body}
       {:ok, %Tesla.Env{body: body}} -> {:error, body}
@@ -90,7 +87,7 @@ defmodule ExForce do
   See [Resources by Version](https://developer.salesforce.com/docs/atlas.en-us.api_rest.meta/api_rest/resources_record_count.htm)
   """
   @spec counts(client, list[String.t()]) :: {:ok, map} | {:error, any}
-  def counts(objects \\ ["Lead"]) do
+  def counts(client, objects) do
     case request(client, method: :get, url: "limits/recordCount?sObjects=#{Enum.join(objects, ",")}") do
       {:ok, %Tesla.Env{status: 200, body: body}} -> {:ok, body}
       {:ok, %Tesla.Env{body: body}} -> {:error, body}
@@ -98,32 +95,6 @@ defmodule ExForce do
     end
   end
 
-  @doc """
-
-  Options
-
-  - `:headers`: set additional headers; default: `[{"user-agent", "#{@default_user_agent}"}]`
-  - `:api_version`: use the given api_version; default: `"#{@default_api_version}"`
-  """
-  def build_client(instance_url_or_map, opts \\ [headers: [{"user-agent", @default_user_agent}]])
-
-  def build_client(%{instance_url: instance_url, access_token: access_token}, opts) do
-    with headers <- Keyword.get(opts, :headers, []),
-         new_headers <- [{"authorization", "Bearer " <> access_token} | headers],
-         new_opts <- Keyword.put(opts, :headers, new_headers) do
-      build_client(instance_url, new_opts)
-    end
-  end
-
-  def build_client(instance_url, opts) when is_binary(instance_url) do
-    Tesla.build_client([
-      {ExForce.TeslaMiddleware,
-       {instance_url, Keyword.get(opts, :api_version, @default_api_version)}},
-      {Tesla.Middleware.Compression, format: "gzip"},
-      {Tesla.Middleware.JSON, engine: Jason},
-      {Tesla.Middleware.Headers, Keyword.get(opts, :headers, [])}
-    ])
-  end
 
   @doc """
   Lists the available objects.
@@ -161,7 +132,7 @@ defmodule ExForce do
   @spec basic_info(client, sobject_name) :: {:ok, map} | {:error, any}
   def basic_info(client, name) do
     case request(client, method: :get, url: "sobjects/#{name}") do
-      {:ok, %Tesla.Env{status: 200, body: %{"recentItems" => recent_items} = body}} ->
+      {:ok, %Tesla.Env{status: 200, body: %{recentItems: recent_items} = body}} ->
         {:ok, Map.put(body, "recentItems", Enum.map(recent_items, &SObject.build/1))}
 
       {:ok, %Tesla.Env{body: body}} ->
@@ -282,7 +253,6 @@ defmodule ExForce do
 
   @spec query_stream(client, soql) :: Enumerable.t()
   def query_stream(client, soql), do: start_query_stream(client, &query/2, soql)
-
   @doc """
   Retrieve additional query results for the specified query ID.
 
@@ -321,16 +291,16 @@ defmodule ExForce do
   @spec query_all_stream(client, soql) :: Enumerable.t()
   def query_all_stream(client, soql), do: start_query_stream(client, &query_all/2, soql)
 
-  defp build_result_set(%{"records" => records, "totalSize" => total_size} = resp) do
+  defp build_result_set(%{records: records, totalSize: total_size} = resp) do
     case resp do
-      %{"done" => true} ->
+      %{done: true} ->
         %QueryResult{
           done: true,
           total_size: total_size,
           records: records |> Enum.map(&SObject.build/1)
         }
 
-      %{"done" => false, "nextRecordsUrl" => next_records_url} ->
+      %{done: false, nextRecordsUrl: next_records_url} ->
         %QueryResult{
           done: false,
           next_records_url: next_records_url,
